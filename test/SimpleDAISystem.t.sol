@@ -5,6 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 import {SimpleDAISystem} from "../src/SimpleDAISystem.sol";
 import {MockV3Aggregator} from "../src/mocks/MockV3Aggregator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Interest} from "../src/Interest.sol";
 
 contract SimpleDAISystemTest is Test {
     SimpleDAISystem public simpleDai;
@@ -12,6 +13,8 @@ contract SimpleDAISystemTest is Test {
 
     uint8 public constant DECIMALS = 8;
     int256 public constant INIT_ANSWER = 250 * 10**8; // Example ETH/USD price
+    uint256 public constant STABILITY_FEE = 5e16; // 5% annual
+    uint256 public constant SECONDS_PER_YEAR = 31536000; // 60*60*24*365
 
     function setUp() public {
         mockV3Aggregator = new MockV3Aggregator(DECIMALS, INIT_ANSWER);        
@@ -25,7 +28,7 @@ contract SimpleDAISystemTest is Test {
         assertEq((uint256(INIT_ANSWER) * 1e18) / 1e8, collateralValue);
     }
 
-    function testDepositVault() public {
+    function testdepositVaultGenerateDai() public {
         uint256 collateralAmount = 1 ether;
         uint256 daiAmount = 100 * 1e18; // Example Dai amount
 
@@ -34,11 +37,11 @@ contract SimpleDAISystemTest is Test {
 
         // Deposit ETH and generate Dai
         vm.startPrank(address(this));
-        simpleDai.depositVault{value: collateralAmount}(daiAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
         vm.stopPrank();
 
         // Check vault values
-        (uint256 collateral, uint256 debt) = simpleDai.vaults(address(this));
+        (uint256 collateral, uint256 debt, ) = simpleDai.vaults(address(this));
         assertEq(collateral, collateralAmount);
         assertEq(debt, daiAmount);
     }
@@ -50,7 +53,7 @@ contract SimpleDAISystemTest is Test {
 
         // Setup vault
         vm.deal(address(this), collateralAmount);
-        simpleDai.depositVault{value: collateralAmount}(daiAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
 
         // Withdraw collateral
         vm.startPrank(address(this));
@@ -58,7 +61,7 @@ contract SimpleDAISystemTest is Test {
         vm.stopPrank();
 
         // Check vault and balance
-        (uint256 collateral, ) = simpleDai.vaults(address(this));
+        (uint256 collateral, ,) = simpleDai.vaults(address(this));
         assertEq(collateral, collateralAmount - withdrawAmount);
         assertEq(address(this).balance, withdrawAmount);
     }
@@ -69,7 +72,7 @@ contract SimpleDAISystemTest is Test {
 
         // Setup vault
         vm.deal(address(this), collateralAmount);
-        simpleDai.depositVault{value: collateralAmount}(daiAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
 
         // Change the ETH price to simulate undercollateralization
         int256 newPrice = 100 * 10**8; // Lower ETH/USD price
@@ -81,7 +84,7 @@ contract SimpleDAISystemTest is Test {
         vm.stopPrank();
 
         // Check vaults after liquidation
-        (uint256 collateralAfter, uint256 debtAfter) = simpleDai.vaults(address(this));
+        (uint256 collateralAfter, uint256 debtAfter, ) = simpleDai.vaults(address(this));
         assertEq(collateralAfter, 3 ether);
         assertEq(debtAfter, 200 ether);
     }
@@ -92,7 +95,7 @@ contract SimpleDAISystemTest is Test {
 
         // Setup vault
         vm.deal(address(this), collateralAmount);
-        simpleDai.depositVault{value: collateralAmount}(daiAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
 
         // Change the ETH price to simulate severe undercollateralization
         int256 newPrice = 30 * 10**8; // Extremely low ETH/USD price
@@ -104,7 +107,7 @@ contract SimpleDAISystemTest is Test {
         vm.stopPrank();
 
         // Check vaults after liquidation
-        (uint256 collateralAfter, uint256 debtAfter) = simpleDai.vaults(address(this));
+        (uint256 collateralAfter, uint256 debtAfter, ) = simpleDai.vaults(address(this));
         assertEq(collateralAfter, 0, "All collateral should be seized");
         assertEq(debtAfter, 0, "Debt should be cleared");
     }
@@ -116,7 +119,7 @@ contract SimpleDAISystemTest is Test {
 
         // Setup vault by depositing ETH and generating Dai
         vm.deal(address(this), collateralAmount);
-        simpleDai.depositVault{value: collateralAmount}(daiAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
 
         // Simulate paying back some Dai
         uint256 payBackAmount = 10 * 1e18; // Amount of Dai to pay back
@@ -131,10 +134,31 @@ contract SimpleDAISystemTest is Test {
         vm.stopPrank();
 
         // // Check the updated debt in the vault
-        (, uint256 debtAfterPayback) = simpleDai.vaults(address(this));
+        (, uint256 debtAfterPayback, ) = simpleDai.vaults(address(this));
         assertEq(debtAfterPayback, daiAmount - payBackAmount);
     }
 
+    function testCompoundInterestAccrual() public {
+        uint256 collateralAmount = 1 ether;
+        uint256 daiAmount = 10 * 1e18; // Example Dai amount
+        uint256 secondsElapsed = 31536000; // Number of blocks to elapse
+
+        // Deposit ETH and generate Dai
+        vm.deal(address(this), collateralAmount);
+        simpleDai.depositVaultGenerateDai{value: collateralAmount}(daiAmount);
+
+        // Simulate the passage of blocks
+        vm.warp(block.timestamp + 31536000);
+        simpleDai.withdrawCollateral(0);
+
+        // Calculate the expected debt amount with compound interest
+        uint256 rayRate = Interest.yearlyRateToRay(STABILITY_FEE);
+        uint256 expectedDebt = Interest.accrueInterest(daiAmount, rayRate, secondsElapsed);
+
+        // Check if the vault's debt matches the expected debt
+        (, uint256 debtAfterAccrual, ) = simpleDai.vaults(address(this));
+        assertEq(debtAfterAccrual, expectedDebt);
+    }
 
     receive() external payable {}
 }

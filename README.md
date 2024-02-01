@@ -30,8 +30,10 @@ Users can withdraw their ETH collateral, provided their vault remains above the 
 ### Dai Repayment
 Users can repay their Dai debt at any time. The repayment reduces the outstanding debt in the user's vault.
 
+### Stability Fee
+An interest rate charged over time on generated Dai. This is a crucial feature for a realistic DeFi lending platform as it accounts for the risk and provides an incentive mechanism for the system.
+
 ## Current Limitations and Future Improvements
-- **Stability Fee**: The current implementation of the `SimpleDAISystem` does not include a stability fee (an interest rate charged over time on generated Dai). This is a crucial feature for a realistic DeFi lending platform as it accounts for the risk and provides an incentive mechanism for the system. Future versions of the contract could include a stability fee mechanism to make the system more robust and closer to real-world applications.
 - **Governance and Upgradability**: The contract does not currently include governance features for parameters like the collateralization ratio, stability fee rates, and other critical system settings. Implementing governance mechanisms would allow for a more decentralized and adaptable system.
 
 ## Testing

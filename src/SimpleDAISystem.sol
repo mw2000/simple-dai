@@ -3,8 +3,11 @@ pragma solidity ^0.8.13;
 import {IDai, Dai} from "src/Dai.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import "./Interest.sol";
 
-contract SimpleDAISystem {
+contract SimpleDAISystem {    
+    uint256 public constant STABILITY_FEE = 5e16; // 5% annual
+
     // Goerli price feed for ETH/USD
     AggregatorV3Interface internal priceFeed;
     address public daiToken;
@@ -15,6 +18,7 @@ contract SimpleDAISystem {
     struct Vault {
         uint256 collateralAmount; // in ETH
         uint256 debtAmount; // Dai generated against the collateral
+        uint256 lastInterestTimestamp; // Last block when interest was accrued
     }
     
     mapping(address => Vault) public vaults;
@@ -24,14 +28,30 @@ contract SimpleDAISystem {
         priceFeed = AggregatorV3Interface(_priceFeedAddress);
         daiToken = address(new Dai());
     }
+
+
+    // Accrue interest on a vault
+    function accrueInterest(address _vaultOwner) internal {
+        Vault storage vault = vaults[_vaultOwner];
+        uint256 secondsElapsed = block.timestamp - vault.lastInterestTimestamp;
+
+        if (secondsElapsed > 0 && vault.debtAmount > 0) {
+            uint256 rayRate = Interest.yearlyRateToRay(STABILITY_FEE);
+
+            vault.debtAmount = Interest.accrueInterest(vault.debtAmount, rayRate, secondsElapsed);
+            vault.lastInterestTimestamp = block.timestamp;
+        }
+    }
     
     // Deposit ETH as collateral and generate Dai
-    function depositVault(uint256 _daiAmount) public payable {
-        require(msg.value > 0, "Collateral must be greater than 0");
+    function depositVaultGenerateDai(uint256 _daiAmount) public payable {
         require(_daiAmount > 0, "Dai amount must be greater than 0");
         
+        accrueInterest(msg.sender);
+
         vaults[msg.sender].collateralAmount += msg.value;
         vaults[msg.sender].debtAmount += _daiAmount;
+        vaults[msg.sender].lastInterestTimestamp = block.timestamp;
 
         // Check if the vault is above the minimum collateralization ratio
         require(isVaultSafe(msg.sender), "Vault is below minimum collateralization ratio");
@@ -60,7 +80,8 @@ contract SimpleDAISystem {
     // Additional logic for handling debt, interest, and collateralization ratio to be added
     function withdrawCollateral(uint256 _withdrawAmount) public {
         require(_withdrawAmount <= vaults[msg.sender].collateralAmount, "Not enough collateral");
-        
+        accrueInterest(msg.sender);
+
         // Check if the vault is still safe after withdrawal
         require(isVaultSafe(msg.sender), "Vault would be undercollateralized");
         
@@ -71,6 +92,7 @@ contract SimpleDAISystem {
     // Liquidate a vault
     function liquidateVault(address _vaultOwner, uint256 _collateralAmount) public {
         require(!isVaultSafe(_vaultOwner), "Vault is already safe");
+        accrueInterest(_vaultOwner);
 
         Vault storage vault = vaults[_vaultOwner];
         uint256 collateralAmountValueInDai = getCollateralValueInDai(_collateralAmount);
@@ -95,6 +117,8 @@ contract SimpleDAISystem {
     // Pay back Dai
     function payBackDai(uint256 _daiAmount) public {
         require(_daiAmount > 0, "Dai amount must be greater than 0");
+        accrueInterest(msg.sender);
+
         require(vaults[msg.sender].debtAmount >= _daiAmount, "Not enough debt to pay back");
 
         IERC20(daiToken).transferFrom(msg.sender, address(this), _daiAmount);
