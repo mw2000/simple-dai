@@ -1,19 +1,44 @@
-## Foundry
+# SimpleDAISystem Contract
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Overview
+The `SimpleDAISystem` contract is a simplified version of a decentralized finance (DeFi) system, resembling platforms like MakerDAO. It allows users to deposit Ethereum (ETH) as collateral to generate a Dai-like stablecoin (referred to as Dai in this document). The system utilizes Chainlink Oracles for accurate ETH/USD price feeds, ensuring that the system's operations are based on current market data.
 
-Foundry consists of:
+## Features
+- **ETH Collateralization**: Users can lock ETH as collateral to mint Dai.
+- **Dai Generation**: Based on the ETH deposited, users can generate an equivalent amount of Dai as per the current ETH/USD price.
+- **Liquidation**: If the collateral's value falls below a certain threshold, the system allows for liquidation of the collateral to ensure the system's stability.
+- **Withdrawal**: Users can withdraw their ETH collateral, partially or fully, as long as their vault remains above the minimum required collateralization ratio.
+- **Dai Repayment**: Users can pay back the generated Dai to reduce their debt in the system.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## Key Helper Contracts
+- **`AggregatorV3Interface`**: An interface to interact with Chainlink price feeds.
+- **`MockV3Aggregator`**: A mock contract for simulating Chainlink price feed behavior in testing environments.
 
-## Documentation
+## Contract Mechanics
+### Deposit Vault
+Users deposit ETH into the system, which is then locked as collateral. The contract checks if the vault (the user's account) stays above the minimum collateralization ratio before allowing Dai generation.
 
-https://book.getfoundry.sh/
+### Dai Generation
+Upon depositing ETH, users can generate a Dai amount equivalent to the value of the deposited ETH. The current ETH/USD price feed is used to determine the equivalent Dai amount.
 
-## Usage
+### Liquidation
+If a user’s collateral value falls below a certain threshold (150% collateralization ratio), the system allows for liquidation. During liquidation, the collateral can be partially or fully seized to cover the outstanding debt, ensuring the system's stability.
+
+### Withdrawal
+Users can withdraw their ETH collateral, provided their vault remains above the minimum required collateralization ratio.
+
+### Dai Repayment
+Users can repay their Dai debt at any time. The repayment reduces the outstanding debt in the user's vault.
+
+## Current Limitations and Future Improvements
+- **Stability Fee**: The current implementation of the `SimpleDAISystem` does not include a stability fee (an interest rate charged over time on generated Dai). This is a crucial feature for a realistic DeFi lending platform as it accounts for the risk and provides an incentive mechanism for the system. Future versions of the contract could include a stability fee mechanism to make the system more robust and closer to real-world applications.
+- **Governance and Upgradability**: The contract does not currently include governance features for parameters like the collateralization ratio, stability fee rates, and other critical system settings. Implementing governance mechanisms would allow for a more decentralized and adaptable system.
+
+## Testing
+The contract includes a comprehensive test suite using Foundry, ensuring the contract functions as expected under various scenarios. The `MockV3Aggregator` contract is used to simulate Chainlink price feeds, allowing for controlled testing environments.
+
+
+## Foundry Commands
 
 ### Build
 
@@ -37,30 +62,4 @@ $ forge fmt
 
 ```shell
 $ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
 ```
